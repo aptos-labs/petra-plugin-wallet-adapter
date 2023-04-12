@@ -1,6 +1,6 @@
 {
   "name": "petra-plugin-wallet-adapter",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Petra plugin to use with Aptos Wallet Adapter",
   "author": "Petra Aptos",
   "main": "./dist/index.js",
