@@ -31,8 +31,16 @@ describe("PetraWallet", () => {
     expect(typeof wallet.signAndSubmitTransaction).toBe("function");
   });
 
+  test("defines signAndSubmitBCSTransaction()", () => {
+    expect(typeof wallet.signAndSubmitBCSTransaction).toBe("function");
+  });
+
   test("defines signMessage()", () => {
     expect(typeof wallet.signMessage).toBe("function");
+  });
+
+  test("defines signTransaction()", () => {
+    expect(typeof wallet.signTransaction).toBe("function");
   });
 
   test("defines onNetworkChange()", () => {
