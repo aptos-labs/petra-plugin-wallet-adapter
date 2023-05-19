@@ -1,8 +1,7 @@
 import {
   AptosWalletErrorResult,
   NetworkName,
-  PluginProvider,
-  TransactionPayload,
+  PluginProvider
 } from "@aptos-labs/wallet-adapter-core";
 import type {
   AccountInfo,
@@ -12,7 +11,7 @@ import type {
   SignMessageResponse,
   WalletName,
 } from "@aptos-labs/wallet-adapter-core";
-import { Types } from "aptos";
+import { TxnBuilderTypes, Types } from "aptos";
 
 interface PetraWindow extends Window {
   petra?: PluginProvider;
@@ -57,7 +56,26 @@ export class PetraWallet implements AdapterPlugin {
   }
 
   async signAndSubmitTransaction(
-    transaction: TransactionPayload,
+    transaction: Types.TransactionPayload,
+    options?: any
+  ): Promise<{ hash: Types.HexEncodedBytes }> {
+    try {
+      const response = await this.provider?.signAndSubmitTransaction(
+        transaction,
+        options
+      );
+      if ((response as AptosWalletErrorResult).code) {
+        throw new Error((response as AptosWalletErrorResult).message);
+      }
+      return response as { hash: Types.HexEncodedBytes };
+    } catch (error: any) {
+      const errMsg = error.message;
+      throw errMsg;
+    }
+  }
+
+  async signAndSubmitBCSTransaction(
+    transaction: TxnBuilderTypes.TransactionPayload,
     options?: any
   ): Promise<{ hash: Types.HexEncodedBytes }> {
     try {
@@ -86,6 +104,24 @@ export class PetraWallet implements AdapterPlugin {
       } else {
         throw `${PetraWalletName} Sign Message failed`;
       }
+    } catch (error: any) {
+      const errMsg = error.message;
+      throw errMsg;
+    }
+  }
+
+  async signTransaction(
+    transaction: Types.TransactionPayload | TxnBuilderTypes.TransactionPayload,
+  ): Promise<{ hash: Types.HexEncodedBytes }> {
+    try {
+      // TODO: We should update the wallet adapter to support options
+      const response = await (this.provider as any).signTransaction(
+        transaction
+      );
+      if ((response as AptosWalletErrorResult).code) {
+        throw new Error((response as AptosWalletErrorResult).message);
+      }
+      return response as { hash: Types.HexEncodedBytes };
     } catch (error: any) {
       const errMsg = error.message;
       throw errMsg;
@@ -138,10 +174,12 @@ export class PetraWallet implements AdapterPlugin {
 
   async network(): Promise<NetworkInfo> {
     try {
-      const response = await this.provider?.network();
+      // TODO: Think of a better way to support this
+      const response = await (window.petra as any).getNetwork();
       if (!response) throw `${PetraWalletName} Network Error`;
       return {
-        name: response as NetworkName,
+        name: response.name as NetworkName,
+        chainId: response.chainId,
       };
     } catch (error: any) {
       throw error;
