@@ -2,7 +2,6 @@ import {
   AptosWalletErrorResult,
   NetworkName,
   PluginProvider,
-  TransactionPayload,
 } from "@aptos-labs/wallet-adapter-core";
 import type {
   AccountInfo,
@@ -57,7 +56,7 @@ export class PetraWallet implements AdapterPlugin {
   }
 
   async signAndSubmitTransaction(
-    transaction: TransactionPayload,
+    transaction: Types.TransactionPayload,
     options?: any
   ): Promise<{ hash: Types.HexEncodedBytes }> {
     try {
