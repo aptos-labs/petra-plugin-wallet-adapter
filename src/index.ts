@@ -188,6 +188,7 @@ export class PetraWallet implements AdapterPlugin {
       return {
         name: response.name as NetworkName,
         chainId: response.chainId,
+        url: response.url,
       };
     } catch (error: any) {
       throw error;
