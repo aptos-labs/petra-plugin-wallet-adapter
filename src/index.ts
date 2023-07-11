@@ -130,13 +130,21 @@ export class PetraWallet implements AdapterPlugin {
 
   async onNetworkChange(callback: any): Promise<void> {
     try {
-      const handleNetworkChange = async (newNetwork: {
+      const handleNetworkChange = async ({
+        name,
+        chainId,
+        url: api,
+      }: {
+        name?: NetworkName;
+        chainId?: number;
+        url?: string;
+        // TODO: Unused. Delete once types in `wallet-adapter-core` are updated
         networkName: NetworkInfo;
       }): Promise<void> => {
         callback({
-          name: newNetwork.networkName,
-          chainId: undefined,
-          api: undefined,
+          name,
+          chainId,
+          api,
         });
       };
       await this.provider?.onNetworkChange(handleNetworkChange);
