@@ -1,7 +1,7 @@
 import {
   AptosWalletErrorResult,
   NetworkName,
-  PluginProvider
+  PluginProvider,
 } from "@aptos-labs/wallet-adapter-core";
 import type {
   AccountInfo,
@@ -111,7 +111,7 @@ export class PetraWallet implements AdapterPlugin {
   }
 
   async signTransaction(
-    transaction: Types.TransactionPayload | TxnBuilderTypes.TransactionPayload,
+    transaction: Types.TransactionPayload | TxnBuilderTypes.TransactionPayload
   ): Promise<{ hash: Types.HexEncodedBytes }> {
     try {
       // TODO: We should update the wallet adapter to support options
@@ -133,7 +133,7 @@ export class PetraWallet implements AdapterPlugin {
       const handleNetworkChange = async ({
         name,
         chainId,
-        url: api,
+        url,
       }: {
         name?: NetworkName;
         chainId?: number;
@@ -144,7 +144,7 @@ export class PetraWallet implements AdapterPlugin {
         callback({
           name,
           chainId,
-          api,
+          url,
         });
       };
       await this.provider?.onNetworkChange(handleNetworkChange);
