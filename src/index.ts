@@ -134,13 +134,7 @@ export class PetraWallet implements AdapterPlugin {
         name,
         chainId,
         url,
-      }: {
-        name?: NetworkName;
-        chainId?: number;
-        url?: string;
-        // TODO: Unused. Delete once types in `wallet-adapter-core` are updated
-        networkName: NetworkInfo;
-      }): Promise<void> => {
+      }: NetworkInfo): Promise<void> => {
         callback({
           name,
           chainId,
