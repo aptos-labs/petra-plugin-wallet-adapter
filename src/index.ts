@@ -31,6 +31,10 @@ export class PetraWallet implements AdapterPlugin {
   provider: PluginProvider | undefined =
     typeof window !== "undefined" ? window.petra : undefined;
 
+  deeplinkProvider(data: { url: string }): string {
+    return `https://petra.app/explore?link=${data.url}`;
+  }
+
   async connect(): Promise<AccountInfo> {
     try {
       const addressInfo = await this.provider?.connect();
