@@ -73,6 +73,7 @@ export class PetraWallet implements AdapterPlugin {
       }
       return response as { hash: Types.HexEncodedBytes };
     } catch (error: any) {
+      console.log(`ERROR: ${JSON.stringify(error)}`)
       const errMsg = error.message;
       throw errMsg;
     }
@@ -191,5 +192,31 @@ export class PetraWallet implements AdapterPlugin {
     } catch (error: any) {
       throw error;
     }
+  }
+
+  async signMultiAgentTransaction(
+      transaction: TxnBuilderTypes.FeePayerRawTransaction | TxnBuilderTypes.MultiAgentRawTransaction,
+  ): Promise<any> {
+    try {
+      // TODO: We should update the wallet adapter to support options?
+      const response = await (this.provider as any).signMultiAgentTransaction(
+          transaction
+      );
+      if ((response as AptosWalletErrorResult).code) {
+        throw new Error((response as AptosWalletErrorResult).message);
+      }
+      return response as { hash: Types.HexEncodedBytes };
+    } catch (error: any) {
+      const errMsg = error.message;
+      throw errMsg;
+    }
+  }
+
+  async signAndSubmitMultiAgentTransaction(
+      transaction: TxnBuilderTypes.MultiAgentRawTransaction,
+      additionalSignatures?: TxnBuilderTypes.AccountAuthenticator[],
+      options?: any
+  ): Promise<any> {
+    return undefined;
   }
 }

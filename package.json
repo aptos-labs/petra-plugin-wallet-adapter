@@ -17,8 +17,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@aptos-labs/wallet-adapter-core": "^2.5.0",
-    "aptos": "^1.4.0"
+    "@aptos-labs/wallet-adapter-core": "^2.5.1",
+    "aptos": "^1.19.0"
   },
   "devDependencies": {
     "@types/jest": "^29.2.3",
