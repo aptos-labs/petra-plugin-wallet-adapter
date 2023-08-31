@@ -1,7 +1,7 @@
 import {
   AptosWalletErrorResult,
   NetworkName,
-  PluginProvider,
+  PluginProvider, TransactionOptions,
 } from "@aptos-labs/wallet-adapter-core";
 import type {
   AccountInfo,
@@ -12,6 +12,10 @@ import type {
   WalletName,
 } from "@aptos-labs/wallet-adapter-core";
 import { TxnBuilderTypes, Types } from "aptos";
+import {
+  MultiTransactionPrepPayload,
+  MultiTransactionSubmissionPayload
+} from "../../aptos-wallet-adapter/packages/wallet-adapter-core/src/WalletCore";
 
 interface PetraWindow extends Window {
   petra?: PluginProvider;
@@ -212,11 +216,37 @@ export class PetraWallet implements AdapterPlugin {
     }
   }
 
-  async signAndSubmitMultiAgentTransaction(
-      transaction: TxnBuilderTypes.MultiAgentRawTransaction,
-      additionalSignatures?: TxnBuilderTypes.AccountAuthenticator[],
-      options?: any
-  ): Promise<any> {
-    return undefined;
-  }
+  async prepMultiTransaction(
+      input: MultiTransactionPrepPayload
+  ) {
+    try {
+      const response = await (this.provider as any).prepMultiTransaction(
+          input
+      );
+      if ((response as AptosWalletErrorResult).code) {
+        throw new Error((response as AptosWalletErrorResult).message);
+      }
+      return response as { hash: Types.HexEncodedBytes };
+    } catch (error: any) {
+      const errMsg = error.message;
+      throw errMsg;
+    }
+  };
+
+  async signAndSubmitMultiTransaction (
+      input: MultiTransactionSubmissionPayload,
+  ) {
+    try {
+      const response = await (this.provider as any).signAndSubmitMultiTransaction(
+          input
+      );
+      if ((response as AptosWalletErrorResult).code) {
+        throw new Error((response as AptosWalletErrorResult).message);
+      }
+      return response as { hash: Types.HexEncodedBytes };
+    } catch (error: any) {
+      const errMsg = error.message;
+      throw errMsg;
+    }
+  };
 }
