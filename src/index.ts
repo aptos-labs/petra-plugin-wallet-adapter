@@ -1,7 +1,7 @@
 import {
   AptosWalletErrorResult,
   NetworkName,
-  PluginProvider, TransactionOptions,
+  PluginProvider, RawTransactionRequest, SignRawTransactionResponse,
 } from "@aptos-labs/wallet-adapter-core";
 import type {
   AccountInfo,
@@ -11,11 +11,7 @@ import type {
   SignMessageResponse,
   WalletName,
 } from "@aptos-labs/wallet-adapter-core";
-import { TxnBuilderTypes, Types } from "aptos";
-import {
-  MultiTransactionPrepPayload,
-  MultiTransactionSubmissionPayload
-} from "../../aptos-wallet-adapter/packages/wallet-adapter-core/src/WalletCore";
+import {AnyRawTransaction, BCS, HexString, TxnBuilderTypes, Types} from "aptos";
 
 interface PetraWindow extends Window {
   petra?: PluginProvider;
@@ -198,47 +194,50 @@ export class PetraWallet implements AdapterPlugin {
     }
   }
 
-  async signMultiAgentTransaction(
-      transaction: TxnBuilderTypes.FeePayerRawTransaction | TxnBuilderTypes.MultiAgentRawTransaction,
-  ): Promise<any> {
+  async signRawTransaction(
+      transaction: AnyRawTransaction,
+  ): Promise<SignRawTransactionResponse> {
     try {
       // TODO: We should update the wallet adapter to support options?
-      const response = await (this.provider as any).signMultiAgentTransaction(
-          transaction
-      );
+      let response;
+      if (transaction instanceof TxnBuilderTypes.RawTransaction) {
+        response = await (this.provider as any).signTransaction(
+            transaction
+        );
+      } else {
+        response = await (this.provider as any).signMultiAgentTransaction(
+            transaction
+        );
+      }
+
+      const serializedEd25519SignatureBytes = new HexString(response.serializedEd25519Signature).toUint8Array();
+      const deserializer = new BCS.Deserializer(serializedEd25519SignatureBytes);
+      const ed25519Signature = TxnBuilderTypes.Ed25519Signature.deserialize(deserializer);
       if ((response as AptosWalletErrorResult).code) {
         throw new Error((response as AptosWalletErrorResult).message);
       }
-      return response as { hash: Types.HexEncodedBytes };
+      return {
+        publicKey: await this.account().then((account) => account.publicKey as string),
+        signature: HexString.fromUint8Array(ed25519Signature.value).hex()
+      };
     } catch (error: any) {
       const errMsg = error.message;
       throw errMsg;
     }
   }
 
-  async prepMultiTransaction(
-      input: MultiTransactionPrepPayload
+  async signAndSubmitRawTransaction (
+      input: RawTransactionRequest,
   ) {
     try {
-      const response = await (this.provider as any).prepMultiTransaction(
-          input
-      );
-      if ((response as AptosWalletErrorResult).code) {
-        throw new Error((response as AptosWalletErrorResult).message);
+      if (input instanceof TxnBuilderTypes.MultiAgentRawTransaction) {
+        throw new Error("Petra does not support multi-agent raw transactions currently");
       }
-      return response as { hash: Types.HexEncodedBytes };
-    } catch (error: any) {
-      const errMsg = error.message;
-      throw errMsg;
-    }
-  };
 
-  async signAndSubmitMultiTransaction (
-      input: MultiTransactionSubmissionPayload,
-  ) {
-    try {
-      const response = await (this.provider as any).signAndSubmitMultiTransaction(
-          input
+      // TODO: Petra doesn't support multi-agent, with or without fee payer with this interface
+      const response = await (this.provider as any).signAndSubmitTransaction(
+          input.rawTransaction,
+          input.feePayerAuthenticator,
       );
       if ((response as AptosWalletErrorResult).code) {
         throw new Error((response as AptosWalletErrorResult).message);
