@@ -16,6 +16,14 @@ import type {
 } from "@aptos-labs/wallet-adapter-core";
 import { TxnBuilderTypes, Types } from "aptos";
 import { convertV1toV2, convertV2PayloadToV1Payload, convertV2toV1 } from './conversion';
+import { codeToError } from './errors';
+
+function remapPetraError(error: any): never {
+  if ("code" in error) {
+    throw codeToError(error.code);
+  }
+  throw error;
+}
 
 interface PetraWindow extends Window {
   petra?: PluginProvider;
@@ -41,27 +49,19 @@ export class PetraWallet implements AdapterPlugin {
   }
 
   async connect(): Promise<AccountInfo> {
-    try {
-      const addressInfo = await this.provider?.connect();
+      const addressInfo = await this.provider!.connect().catch(remapPetraError);
       if (!addressInfo) throw `${PetraWalletName} Address Info Error`;
       return addressInfo;
-    } catch (error: any) {
-      throw error;
-    }
   }
 
   async account(): Promise<AccountInfo> {
-    const response = await this.provider?.account();
+    const response = await this.provider!.account().catch(remapPetraError);
     if (!response) throw `${PetraWalletName} Account Error`;
     return response;
   }
 
   async disconnect(): Promise<void> {
-    try {
-      await this.provider?.disconnect();
-    } catch (error: any) {
-      throw error;
-    }
+    return this.provider!.disconnect().catch(remapPetraError);
   }
 
   async signAndSubmitTransaction(
@@ -73,187 +73,109 @@ export class PetraWallet implements AdapterPlugin {
       const payload = await convertV2PayloadToV1Payload(transaction.data, network)
       return "type" in payload
         ? this.signAndSubmitTransaction(payload, options)
-        : this.signAndSubmitBCSTransaction(payload, options);
+        : this.signAndSubmitBCSTransaction(payload);
     }
 
-    try {
-      const response = await this.provider?.signAndSubmitTransaction(
-        transaction,
-        options,
-      );
-      if ((response as AptosWalletErrorResult).code) {
-        throw new Error((response as AptosWalletErrorResult).message);
-      }
-      return response as { hash: Types.HexEncodedBytes };
-    } catch (error: any) {
-      const errMsg = error.message;
-      throw errMsg;
-    }
+    const response = await this.provider!.signAndSubmitTransaction(
+      transaction,
+      options,
+    ).catch(remapPetraError);
+    return response as { hash: Types.HexEncodedBytes };
   }
 
   async signAndSubmitBCSTransaction(
     transaction: TxnBuilderTypes.TransactionPayload,
-    options?: any,
   ): Promise<{ hash: Types.HexEncodedBytes }> {
-    try {
-      const response = await this.provider?.signAndSubmitTransaction(
-        transaction,
-        options,
-      );
-      if ((response as AptosWalletErrorResult).code) {
-        throw new Error((response as AptosWalletErrorResult).message);
-      }
-      return response as { hash: Types.HexEncodedBytes };
-    } catch (error: any) {
-      const errMsg = error.message;
-      throw errMsg;
-    }
+    const response = await this.provider!.signAndSubmitTransaction(
+      transaction
+    ).catch(remapPetraError);
+    return response as { hash: Types.HexEncodedBytes };
   }
 
   async signMessage(message: SignMessagePayload): Promise<SignMessageResponse> {
-    try {
-      if (typeof message !== "object" || !message.nonce) {
-        throw `${PetraWalletName} Invalid signMessage Payload`;
-      }
-      const response = await this.provider?.signMessage(message);
-      if (response) {
-        return response;
-      } else {
-        throw `${PetraWalletName} Sign Message failed`;
-      }
-    } catch (error: any) {
-      const errMsg = error.message;
-      throw errMsg;
+    if (typeof message !== "object" || !message.nonce) {
+      throw `${PetraWalletName} Invalid signMessage Payload`;
     }
+    return this.provider!.signMessage(message).catch(remapPetraError);
   }
 
   async signTransaction(
     transactionOrPayload: Types.TransactionPayload | TxnBuilderTypes.TransactionPayload | AnyRawTransaction,
     optionsOrAsFeePayer?: TransactionOptions | boolean,
   ): Promise<AccountAuthenticator | Uint8Array> {
-    try {
-      // If "rawTransaction" is part of the args, then we have a v2 request
-      if ("rawTransaction" in transactionOrPayload) {
-        const transaction = transactionOrPayload;
-        const asFeePayer = (optionsOrAsFeePayer as boolean | undefined) ?? false;
-        const rawTxnV1 = convertV2toV1(transaction.rawTransaction, TxnBuilderTypes.RawTransaction);
+    // If "rawTransaction" is part of the args, then we have a v2 request
+    if ("rawTransaction" in transactionOrPayload) {
+      const transaction = transactionOrPayload;
+      const asFeePayer = (optionsOrAsFeePayer as boolean | undefined) ?? false;
+      const rawTxnV1 = convertV2toV1(transaction.rawTransaction, TxnBuilderTypes.RawTransaction);
 
-        const secondarySignersAddressesV1 = transaction.secondarySignerAddresses?.map(
-          (address) => convertV2toV1(address, TxnBuilderTypes.AccountAddress),
+      const secondarySignersAddressesV1 = transaction.secondarySignerAddresses?.map(
+        (address) => convertV2toV1(address, TxnBuilderTypes.AccountAddress),
+      );
+
+      let rawTxn:
+        | TxnBuilderTypes.RawTransaction
+        | TxnBuilderTypes.FeePayerRawTransaction
+        | TxnBuilderTypes.MultiAgentRawTransaction;
+
+      if (asFeePayer) {
+        const activeAccount = await this.account();
+        const feePayerAddressV1 = TxnBuilderTypes.AccountAddress.fromHex(activeAccount.address);
+        rawTxn = new TxnBuilderTypes.FeePayerRawTransaction(
+          rawTxnV1,
+          secondarySignersAddressesV1 ?? [],
+          feePayerAddressV1,
         );
-
-        let rawTxn:
-          | TxnBuilderTypes.RawTransaction
-          | TxnBuilderTypes.FeePayerRawTransaction
-          | TxnBuilderTypes.MultiAgentRawTransaction;
-
-        if (asFeePayer) {
-          const activeAccount = await this.account();
-          const feePayerAddressV1 = TxnBuilderTypes.AccountAddress.fromHex(activeAccount.address);
-          rawTxn = new TxnBuilderTypes.FeePayerRawTransaction(
-            rawTxnV1,
-            secondarySignersAddressesV1 ?? [],
-            feePayerAddressV1,
-          );
-        } else if (transaction.feePayerAddress) {
-          const feePayerAddressV1 = convertV2toV1(transaction.feePayerAddress, TxnBuilderTypes.AccountAddress);
-          rawTxn = new TxnBuilderTypes.FeePayerRawTransaction(
-            rawTxnV1,
-            secondarySignersAddressesV1 ?? [],
-            feePayerAddressV1,
-          );
-        } else if (secondarySignersAddressesV1) {
-          rawTxn = new TxnBuilderTypes.MultiAgentRawTransaction(
-            rawTxnV1,
-            secondarySignersAddressesV1,
-          );
-        } else {
-          rawTxn = rawTxnV1;
-        }
-
-        const { accountAuthenticator } = await (this.provider as any).signTransaction(
-          { rawTxn },
+      } else if (transaction.feePayerAddress) {
+        const feePayerAddressV1 = convertV2toV1(transaction.feePayerAddress, TxnBuilderTypes.AccountAddress);
+        rawTxn = new TxnBuilderTypes.FeePayerRawTransaction(
+          rawTxnV1,
+          secondarySignersAddressesV1 ?? [],
+          feePayerAddressV1,
         );
-        return convertV1toV2(accountAuthenticator, AccountAuthenticator);
+      } else if (secondarySignersAddressesV1) {
+        rawTxn = new TxnBuilderTypes.MultiAgentRawTransaction(
+          rawTxnV1,
+          secondarySignersAddressesV1,
+        );
+      } else {
+        rawTxn = rawTxnV1;
       }
 
-      const options = optionsOrAsFeePayer as TransactionOptions | undefined;
-      const signedTxnBytes: Uint8Array = await (this.provider as any).signTransaction(
-        transactionOrPayload,
-        {
-          maxGasAmount: options?.max_gas_amount
-            ? Number(options?.max_gas_amount)
-            : undefined,
-          gasUnitPrice: options?.gas_unit_price
-            ? Number(options?.gas_unit_price)
-            : undefined,
-        },
-      );
-      return signedTxnBytes;
-    } catch (error: any) {
-      const errMsg = error.message;
-      throw errMsg;
+      const { accountAuthenticator } = await (this.provider as any).signTransaction(
+        { rawTxn },
+      ).catch(remapPetraError);
+      return convertV1toV2(accountAuthenticator, AccountAuthenticator);
     }
+
+    const options = optionsOrAsFeePayer as TransactionOptions | undefined;
+    return await (this.provider as any).signTransaction(
+      transactionOrPayload,
+      {
+        maxGasAmount: options?.max_gas_amount
+          ? Number(options?.max_gas_amount)
+          : undefined,
+        gasUnitPrice: options?.gas_unit_price
+          ? Number(options?.gas_unit_price)
+          : undefined,
+      },
+    ).catch(remapPetraError);
   }
 
-  async onNetworkChange(callback: any): Promise<void> {
-    try {
-      const handleNetworkChange = async ({
-                                           name,
-                                           chainId,
-                                           url,
-                                         }: NetworkInfo): Promise<void> => {
-        callback({
-          name,
-          chainId,
-          url,
-        });
-      };
-      await this.provider?.onNetworkChange(handleNetworkChange);
-    } catch (error: any) {
-      const errMsg = error.message;
-      throw errMsg;
-    }
+  async onNetworkChange(callback?: (args: NetworkInfo) => void): Promise<void> {
+    (this.provider as any)?.onNetworkChange(callback);
   }
 
-  async onAccountChange(callback: any): Promise<void> {
-    try {
-      const handleAccountChange = async (
-        newAccount: AccountInfo,
-      ): Promise<void> => {
-        if (newAccount?.publicKey) {
-          callback({
-            publicKey: newAccount.publicKey,
-            address: newAccount.address,
-          });
-        } else {
-          const response = await this.connect();
-          callback({
-            address: response?.address,
-            publicKey: response?.publicKey,
-          });
-        }
-      };
-      await this.provider?.onAccountChange(handleAccountChange);
-    } catch (error: any) {
-      console.log(error);
-      const errMsg = error.message;
-      throw errMsg;
-    }
+  async onAccountChange(callback?: (args: AccountInfo) => void): Promise<void> {
+    (this.provider as any)?.onAccountChange(callback);
   }
 
   async network(): Promise<NetworkInfo> {
-    try {
-      // TODO: Think of a better way to support this
-      const response = await (window.petra as any).getNetwork();
-      if (!response) throw `${PetraWalletName} Network Error`;
-      return {
-        name: response.name as Network,
-        chainId: response.chainId,
-        url: response.url,
-      };
-    } catch (error: any) {
-      throw error;
-    }
+    const response = await (window.petra as any).getNetwork().catch(remapPetraError);
+    return {
+      name: response.name as Network,
+      chainId: response.chainId,
+      url: response.url,
+    };
   }
 }
