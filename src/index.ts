@@ -25,6 +25,18 @@ function remapPetraError(error: any): never {
   throw error;
 }
 
+function remapTransactionOptions(options: any) {
+  return {
+    maxGasAmount: options?.max_gas_amount
+      ? Number(options?.max_gas_amount)
+      : undefined,
+    gasUnitPrice: options?.gas_unit_price
+      ? Number(options?.gas_unit_price)
+      : undefined,
+    ...options,
+  };
+}
+
 interface PetraWindow extends Window {
   petra?: PluginProvider;
 }
@@ -49,9 +61,9 @@ export class PetraWallet implements AdapterPlugin {
   }
 
   async connect(): Promise<AccountInfo> {
-      const addressInfo = await this.provider!.connect().catch(remapPetraError);
-      if (!addressInfo) throw `${PetraWalletName} Address Info Error`;
-      return addressInfo;
+    const addressInfo = await this.provider!.connect().catch(remapPetraError);
+    if (!addressInfo) throw `${PetraWalletName} Address Info Error`;
+    return addressInfo;
   }
 
   async account(): Promise<AccountInfo> {
@@ -73,22 +85,33 @@ export class PetraWallet implements AdapterPlugin {
       const payload = await convertV2PayloadToV1Payload(transaction.data, network)
       return "type" in payload
         ? this.signAndSubmitTransaction(payload, options)
-        : this.signAndSubmitBCSTransaction(payload);
+        : this.signAndSubmitBCSTransaction(payload, options);
     }
 
     const response = await this.provider!.signAndSubmitTransaction(
       transaction,
-      options,
+      options ? remapTransactionOptions(options) : undefined,
     ).catch(remapPetraError);
     return response as { hash: Types.HexEncodedBytes };
   }
 
   async signAndSubmitBCSTransaction(
-    transaction: TxnBuilderTypes.TransactionPayload,
+    payload: TxnBuilderTypes.TransactionPayload,
+    options?: any,
   ): Promise<{ hash: Types.HexEncodedBytes }> {
-    const response = await this.provider!.signAndSubmitTransaction(
-      transaction
-    ).catch(remapPetraError);
+    let response;
+    if (options !== undefined) {
+      response = await this.provider!.signAndSubmitTransaction(
+        {
+          payload,
+          options: remapTransactionOptions(options),
+        },
+      ).catch(remapPetraError);
+    } else {
+      response = await this.provider!.signAndSubmitTransaction(
+        payload,
+      ).catch(remapPetraError);
+    }
     return response as { hash: Types.HexEncodedBytes };
   }
 
@@ -151,14 +174,7 @@ export class PetraWallet implements AdapterPlugin {
     const options = optionsOrAsFeePayer as TransactionOptions | undefined;
     return await (this.provider as any).signTransaction(
       transactionOrPayload,
-      {
-        maxGasAmount: options?.max_gas_amount
-          ? Number(options?.max_gas_amount)
-          : undefined,
-        gasUnitPrice: options?.gas_unit_price
-          ? Number(options?.gas_unit_price)
-          : undefined,
-      },
+      options ? remapTransactionOptions(options) : undefined,
     ).catch(remapPetraError);
   }
 
