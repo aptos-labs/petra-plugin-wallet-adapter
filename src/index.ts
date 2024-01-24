@@ -1,7 +1,6 @@
-import { AccountAuthenticator, Network } from '@aptos-labs/ts-sdk';
+import { AccountAddress, AccountAuthenticator, Network } from '@aptos-labs/ts-sdk';
 import {
-  AnyRawTransaction,
-  AptosWalletErrorResult,
+  AnyRawTransaction, areBCSArguments,
   InputTransactionData,
   PluginProvider,
   TransactionOptions,
@@ -15,7 +14,12 @@ import type {
   WalletName,
 } from "@aptos-labs/wallet-adapter-core";
 import { TxnBuilderTypes, Types } from "aptos";
-import { convertV1toV2, convertV2PayloadToV1Payload, convertV2toV1 } from './conversion';
+import {
+  convertV1toV2,
+  convertV2JsonPayloadToV1,
+  convertV2toV1,
+  generateV1TransactionPayload,
+} from './conversion';
 import { codeToError } from './errors';
 
 function remapPetraError(error: any): never {
@@ -77,20 +81,35 @@ export class PetraWallet implements AdapterPlugin {
   }
 
   async signAndSubmitTransaction(
-    transaction: InputTransactionData | Types.TransactionPayload,
-    options?: any,
+    payloadV1OrGenerateTxnInput: InputTransactionData | Types.TransactionPayload,
+    optionsV1?: any,
   ): Promise<{ hash: Types.HexEncodedBytes }> {
-    if ("data" in transaction) {
-      const network = await this.network();
-      const payload = await convertV2PayloadToV1Payload(transaction.data, network)
-      return "type" in payload
-        ? this.signAndSubmitTransaction(payload, options)
-        : this.signAndSubmitBCSTransaction(payload, options);
+    if ("data" in payloadV1OrGenerateTxnInput) {
+      const generateTxnInput = payloadV1OrGenerateTxnInput;
+      const options = {
+        expirationTimestamp: generateTxnInput.options?.expireTimestamp,
+        sender: generateTxnInput.sender
+          ? AccountAddress.from(generateTxnInput.sender).toString()
+          : undefined,
+        ...generateTxnInput.options,
+      }
+
+      // The payload arguments are not serialized, the easiest thing to do is to generate a payload instance
+      if (areBCSArguments(generateTxnInput.data.functionArguments)) {
+        const network = await this.network();
+        const payload = await generateV1TransactionPayload(generateTxnInput.data, network);
+        return await this.signAndSubmitBCSTransaction(payload, options);
+      }
+
+      // The payload arguments are serialized, we can just convert and send them over
+      const payload = await convertV2JsonPayloadToV1(generateTxnInput.data)
+      return await this.signAndSubmitTransaction(payload, options);
     }
 
+    const payloadV1 = payloadV1OrGenerateTxnInput;
     const response = await this.provider!.signAndSubmitTransaction(
-      transaction,
-      options ? remapTransactionOptions(options) : undefined,
+      payloadV1,
+      optionsV1 ? remapTransactionOptions(optionsV1) : undefined,
     ).catch(remapPetraError);
     return response as { hash: Types.HexEncodedBytes };
   }

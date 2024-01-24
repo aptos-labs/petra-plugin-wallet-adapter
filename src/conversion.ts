@@ -8,7 +8,7 @@ import {
   Serializable as SerializableV2,
   generateTransactionPayload
 } from "@aptos-labs/ts-sdk";
-import { areBCSArguments, NetworkInfo } from '@aptos-labs/wallet-adapter-core';
+import { NetworkInfo } from '@aptos-labs/wallet-adapter-core';
 import { BCS, TxnBuilderTypes, Types } from "aptos";
 
 export type SerializableV1 = { serialize(serializer: BCS.Serializer): void };
@@ -64,19 +64,15 @@ export function convertV2JsonPayloadToV1(
   };
 }
 
-export async function convertV2PayloadToV1Payload(
+export async function generateV1TransactionPayload(
   payloadData: InputGenerateTransactionPayloadData, network: NetworkInfo,
-): Promise<Types.TransactionPayload | TxnBuilderTypes.TransactionPayload> {
-  // first check if each argument is a BCS serialized argument
-  if (areBCSArguments(payloadData.functionArguments)) {
-    const aptosConfig = new AptosConfig({
-      network: convertNetwork(network),
-    });
-    const newPayload = await generateTransactionPayload({
-      ...(payloadData as InputEntryFunctionDataWithRemoteABI),
-      aptosConfig: aptosConfig,
-    });
-    return convertV2toV1(newPayload, TxnBuilderTypes.TransactionPayload);
-  }
-  return convertV2JsonPayloadToV1(payloadData);
+): Promise<TxnBuilderTypes.TransactionPayload> {
+  const aptosConfig = new AptosConfig({
+    network: convertNetwork(network),
+  });
+  const newPayload = await generateTransactionPayload({
+    ...(payloadData as InputEntryFunctionDataWithRemoteABI),
+    aptosConfig: aptosConfig,
+  });
+  return convertV2toV1(newPayload, TxnBuilderTypes.TransactionPayload);
 }
