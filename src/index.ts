@@ -22,6 +22,16 @@ import {
 } from './conversion';
 import { codeToError } from './errors';
 
+function isObjectPropsUnsupportedError(err: any): boolean {
+  return err instanceof Error && err.message === "Cannot read properties of undefined (reading 'map')";
+}
+
+function areOptionsEmpty(options?: any): options is undefined {
+  return options === undefined
+    || Object.keys(options).length === 0
+    || Object.values(options).every((v) => v === undefined);
+}
+
 function remapPetraError(error: any): never {
   if ("code" in error) {
     throw codeToError(error.code);
@@ -118,19 +128,27 @@ export class PetraWallet implements AdapterPlugin {
     payload: TxnBuilderTypes.TransactionPayload,
     options?: any,
   ): Promise<{ hash: Types.HexEncodedBytes }> {
-    let response;
-    if (options !== undefined) {
-      response = await this.provider!.signAndSubmitTransaction(
-        {
-          payload,
-          options: remapTransactionOptions(options),
-        },
-      ).catch(remapPetraError);
-    } else {
-      response = await this.provider!.signAndSubmitTransaction(
-        payload,
-      ).catch(remapPetraError);
+    if (!areOptionsEmpty(options)) {
+      try {
+        const response = await this.provider!.signAndSubmitTransaction(
+          {
+            payload,
+            options: remapTransactionOptions(options),
+          },
+        ).catch(remapPetraError);
+        return response as { hash: Types.HexEncodedBytes };
+      } catch(err) {
+        // Follow through if object props are not supported
+        if (!isObjectPropsUnsupportedError(err)){
+          throw err;
+        }
+        console.warn("Options are not supported on your current version of Petra and they will be ignored. " +
+          "Please update to Petra >= 1.2.24 to support them.");
+      }
     }
+    const response = await this.provider!.signAndSubmitTransaction(
+      payload,
+    ).catch(remapPetraError);
     return response as { hash: Types.HexEncodedBytes };
   }
 
