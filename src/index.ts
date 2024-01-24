@@ -142,8 +142,8 @@ export class PetraWallet implements AdapterPlugin {
         if (!isObjectPropsUnsupportedError(err)){
           throw err;
         }
-        console.warn("Options are not supported on your current version of Petra and they will be ignored. " +
-          "Please update to Petra >= 1.2.24 to support them.");
+        console.warn("Options are not supported by your current version of Petra and they will be ignored. " +
+          "Please update to Petra >= 1.2.27.\nIgnored options: ", options);
       }
     }
     const response = await this.provider!.signAndSubmitTransaction(
@@ -202,15 +202,24 @@ export class PetraWallet implements AdapterPlugin {
         rawTxn = rawTxnV1;
       }
 
-      const { accountAuthenticator } = await (this.provider as any).signTransaction(
-        { rawTxn },
-      ).catch(remapPetraError);
-      return convertV1toV2(accountAuthenticator, AccountAuthenticator);
+      try {
+        const { accountAuthenticator } = await (this.provider as any).signTransaction(
+          { rawTxn },
+        ).catch(remapPetraError);
+        return convertV1toV2(accountAuthenticator, AccountAuthenticator);
+      } catch (err) {
+        if (isObjectPropsUnsupportedError(err)) {
+          throw new Error("Signing an arbitrary raw transaction is not supported by your current version of Petra. " +
+            "Please update to Petra >= 1.2.27.");
+        }
+        throw err;
+      }
     }
 
+    const payload = transactionOrPayload;
     const options = optionsOrAsFeePayer as TransactionOptions | undefined;
     return await (this.provider as any).signTransaction(
-      transactionOrPayload,
+      payload,
       options ? remapTransactionOptions(options) : undefined,
     ).catch(remapPetraError);
   }
