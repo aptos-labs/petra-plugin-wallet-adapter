@@ -1,7 +1,10 @@
+import { AccountAuthenticator, Network } from '@aptos-labs/ts-sdk';
 import {
+  AnyRawTransaction,
   AptosWalletErrorResult,
-  NetworkName,
+  InputTransactionData,
   PluginProvider,
+  TransactionOptions,
 } from "@aptos-labs/wallet-adapter-core";
 import type {
   AccountInfo,
@@ -12,6 +15,7 @@ import type {
   WalletName,
 } from "@aptos-labs/wallet-adapter-core";
 import { TxnBuilderTypes, Types } from "aptos";
+import { convertV1toV2, convertV2PayloadToV1Payload, convertV2toV1 } from './conversion';
 
 interface PetraWindow extends Window {
   petra?: PluginProvider;
@@ -23,6 +27,7 @@ export const PetraWalletName = "Petra" as WalletName<"Petra">;
 
 export class PetraWallet implements AdapterPlugin {
   readonly name = PetraWalletName;
+  readonly version = "v2";
   readonly url =
     "https://chrome.google.com/webstore/detail/petra-aptos-wallet/ejjladinnckdgjemekebdpeokbikhfci";
   readonly icon =
@@ -60,13 +65,21 @@ export class PetraWallet implements AdapterPlugin {
   }
 
   async signAndSubmitTransaction(
-    transaction: Types.TransactionPayload,
-    options?: any
+    transaction: InputTransactionData | Types.TransactionPayload,
+    options?: any,
   ): Promise<{ hash: Types.HexEncodedBytes }> {
+    if ("data" in transaction) {
+      const network = await this.network();
+      const payload = await convertV2PayloadToV1Payload(transaction.data, network)
+      return "type" in payload
+        ? this.signAndSubmitTransaction(payload, options)
+        : this.signAndSubmitBCSTransaction(payload, options);
+    }
+
     try {
       const response = await this.provider?.signAndSubmitTransaction(
         transaction,
-        options
+        options,
       );
       if ((response as AptosWalletErrorResult).code) {
         throw new Error((response as AptosWalletErrorResult).message);
@@ -80,12 +93,12 @@ export class PetraWallet implements AdapterPlugin {
 
   async signAndSubmitBCSTransaction(
     transaction: TxnBuilderTypes.TransactionPayload,
-    options?: any
+    options?: any,
   ): Promise<{ hash: Types.HexEncodedBytes }> {
     try {
       const response = await this.provider?.signAndSubmitTransaction(
         transaction,
-        options
+        options,
       );
       if ((response as AptosWalletErrorResult).code) {
         throw new Error((response as AptosWalletErrorResult).message);
@@ -115,17 +128,68 @@ export class PetraWallet implements AdapterPlugin {
   }
 
   async signTransaction(
-    transaction: Types.TransactionPayload | TxnBuilderTypes.TransactionPayload
-  ): Promise<{ hash: Types.HexEncodedBytes }> {
+    transactionOrPayload: Types.TransactionPayload | TxnBuilderTypes.TransactionPayload | AnyRawTransaction,
+    optionsOrAsFeePayer?: TransactionOptions | boolean,
+  ): Promise<AccountAuthenticator | Uint8Array> {
     try {
-      // TODO: We should update the wallet adapter to support options
-      const response = await (this.provider as any).signTransaction(
-        transaction
-      );
-      if ((response as AptosWalletErrorResult).code) {
-        throw new Error((response as AptosWalletErrorResult).message);
+      // If "rawTransaction" is part of the args, then we have a v2 request
+      if ("rawTransaction" in transactionOrPayload) {
+        const transaction = transactionOrPayload;
+        const asFeePayer = (optionsOrAsFeePayer as boolean | undefined) ?? false;
+        const rawTxnV1 = convertV2toV1(transaction.rawTransaction, TxnBuilderTypes.RawTransaction);
+
+        const secondarySignersAddressesV1 = transaction.secondarySignerAddresses?.map(
+          (address) => convertV2toV1(address, TxnBuilderTypes.AccountAddress),
+        );
+
+        let rawTxn:
+          | TxnBuilderTypes.RawTransaction
+          | TxnBuilderTypes.FeePayerRawTransaction
+          | TxnBuilderTypes.MultiAgentRawTransaction;
+
+        if (asFeePayer) {
+          const activeAccount = await this.account();
+          const feePayerAddressV1 = TxnBuilderTypes.AccountAddress.fromHex(activeAccount.address);
+          rawTxn = new TxnBuilderTypes.FeePayerRawTransaction(
+            rawTxnV1,
+            secondarySignersAddressesV1 ?? [],
+            feePayerAddressV1,
+          );
+        } else if (transaction.feePayerAddress) {
+          const feePayerAddressV1 = convertV2toV1(transaction.feePayerAddress, TxnBuilderTypes.AccountAddress);
+          rawTxn = new TxnBuilderTypes.FeePayerRawTransaction(
+            rawTxnV1,
+            secondarySignersAddressesV1 ?? [],
+            feePayerAddressV1,
+          );
+        } else if (secondarySignersAddressesV1) {
+          rawTxn = new TxnBuilderTypes.MultiAgentRawTransaction(
+            rawTxnV1,
+            secondarySignersAddressesV1,
+          );
+        } else {
+          rawTxn = rawTxnV1;
+        }
+
+        const { accountAuthenticator } = await (this.provider as any).signTransaction(
+          { rawTxn },
+        );
+        return convertV1toV2(accountAuthenticator, AccountAuthenticator);
       }
-      return response as { hash: Types.HexEncodedBytes };
+
+      const options = optionsOrAsFeePayer as TransactionOptions | undefined;
+      const signedTxnBytes: Uint8Array = await (this.provider as any).signTransaction(
+        transactionOrPayload,
+        {
+          maxGasAmount: options?.max_gas_amount
+            ? Number(options?.max_gas_amount)
+            : undefined,
+          gasUnitPrice: options?.gas_unit_price
+            ? Number(options?.gas_unit_price)
+            : undefined,
+        },
+      );
+      return signedTxnBytes;
     } catch (error: any) {
       const errMsg = error.message;
       throw errMsg;
@@ -135,10 +199,10 @@ export class PetraWallet implements AdapterPlugin {
   async onNetworkChange(callback: any): Promise<void> {
     try {
       const handleNetworkChange = async ({
-        name,
-        chainId,
-        url,
-      }: NetworkInfo): Promise<void> => {
+                                           name,
+                                           chainId,
+                                           url,
+                                         }: NetworkInfo): Promise<void> => {
         callback({
           name,
           chainId,
@@ -155,7 +219,7 @@ export class PetraWallet implements AdapterPlugin {
   async onAccountChange(callback: any): Promise<void> {
     try {
       const handleAccountChange = async (
-        newAccount: AccountInfo
+        newAccount: AccountInfo,
       ): Promise<void> => {
         if (newAccount?.publicKey) {
           callback({
@@ -184,7 +248,7 @@ export class PetraWallet implements AdapterPlugin {
       const response = await (window.petra as any).getNetwork();
       if (!response) throw `${PetraWalletName} Network Error`;
       return {
-        name: response.name as NetworkName,
+        name: response.name as Network,
         chainId: response.chainId,
         url: response.url,
       };
