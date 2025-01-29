@@ -6,7 +6,8 @@ import {
   TypeTag,
   Deserializer,
   Serializable as SerializableV2,
-  generateTransactionPayload
+  generateTransactionPayload,
+  Hex
 } from "@aptos-labs/ts-sdk";
 import { NetworkInfo } from '@aptos-labs/wallet-adapter-core';
 import { BCS, TxnBuilderTypes, Types } from "aptos";
@@ -45,7 +46,15 @@ export function convertV2JsonPayloadToV1(
   payload: InputGenerateTransactionPayloadData
 ): Types.TransactionPayload {
   if ("bytecode" in payload) {
-    throw new Error("script payload not supported");
+      return {
+        arguments: payload.functionArguments || [],
+        code: {
+          bytecode: Hex.fromHexInput(payload.bytecode).toString(),
+        },
+        type: 'script',
+        type_arguments:
+            payload.typeArguments?.map((typeTag) => typeTag.toString()) || [],
+      };
   }
 
   const stringTypeTags = payload.typeArguments?.map(
